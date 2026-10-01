@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="et">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta
+      name="description"
+      content="NutriKauss – mobiilisõbralik toitumismäng HTML5/CSS3/Vanilla JS kujul."
+    />
+    <title>NutriKauss</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <section id="homeView" class="view active landing-page">
+        <header class="topbar">
+          <div class="brand-group">
+            <h1>NutriKauss</h1>
+          </div>
+
+          <div class="score-box hidden">
+            <span>Highscore</span>
+            <strong id="highScoreValue">0</strong>
+          </div>
+        </header>
+
+        <main class="home-layout">
+          <div class="pyramid-panel">
+            <div class="section-label">Mängu ülevaade</div>
+            <h2>Vali tase</h2>
+
+            <div
+              class="pyramid-scene home-pyramid-container"
+              aria-label="Toidupüramiid tasemete valikuks"
+            >
+              <img
+                class="home-pyramid-image"
+                src="toidupuramiid.png"
+                alt="Toidupüramiid"
+              />
+              <div class="pyramid" id="pyramid"></div>
+            </div>
+
+            <button
+              id="startGameBtn"
+              class="primary-btn"
+              type="button"
+              disabled
+            >
+              Alusta mängu
+            </button>
+
+            <article class="instructions-card">
+              <h3>Kuidas mängida?</h3>
+              <p>
+                <strong>1. Loe päevaülesannet</strong><br />
+                Enne iga toidukorda saad teada, mis sind päeva jooksul ees
+                ootab. Mõtle, millist energiat ja toitu sul selleks vaja läheb.
+              </p>
+            </article>
+          </div>
+        </main>
+      </section>
+
+      <section id="gameView" class="view hidden game-view" aria-live="polite">
+        <header class="game-header">
+          <div>
+            <h2 id="currentLevelLabel">Korrus 1</h2>
+          </div>
+
+          <div class="game-actions">
+            <button
+              id="hintBtn"
+              class="secondary-btn icon-btn"
+              type="button"
+              aria-label="Näita vihjet"
+              title="Näita vihjet"
+            >
+              ?
+            </button>
+            <button
+              id="backHomeBtn"
+              class="ghost-btn"
+              type="button"
+              aria-label="Tagasi avalehele"
+              title="Tagasi avalehele"
+            >
+              <span aria-hidden="true">⌂</span>
+            </button>
+          </div>
+        </header>
+
+        <main class="game-layout">
+          <section class="shelf-panel food-shelf-container">
+            <div class="panel-header">
+              <h3>Toiduained</h3>
+              <span id="objectiveText">Lisa tasakaalustatud hommikusöök.</span>
+            </div>
+            <div id="ingredientShelf" class="ingredient-shelf food-grid"></div>
+            <button
+              id="prevIngredientsBtn"
+              class="shelf-nav-btn shelf-prev-btn"
+              type="button"
+              aria-label="Näita eelmisi toiduaineid"
+            >
+              ←
+            </button>
+            <button
+              id="nextIngredientsBtn"
+              class="shelf-nav-btn shelf-next-btn"
+              type="button"
+              aria-label="Näita järgmisi toiduaineid"
+            >
+              →
+            </button>
+            <div
+              class="level-prompt speech-bubble"
+              id="levelPromptInline"
+            ></div>
+          </section>
+
+          <section class="bowl-panel bowl-section">
+            <div class="bowl-wrap">
+              <div id="bowl" class="bowl" aria-label="Kauss toiduainega">
+                <img
+                  class="bowl-image"
+                  src="kauss.png"
+                  alt=""
+                  aria-hidden="true"
+                />
+                <div id="bowlItems" class="bowl-items"></div>
+              </div>
+            </div>
+
+            <button
+              id="submitMealBtn"
+              class="primary-btn wide submit-btn"
+              type="button"
+            >
+              Sega &amp; Söö
+            </button>
+          </section>
+        </main>
+      </section>
+    </div>
+
+    <div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+    <div
+      id="confirmHomeModal"
+      class="modal hidden"
+      aria-modal="true"
+      role="dialog"
+    >
+      <div class="modal-card confirm-card">
+        <button
+          class="close-modal confirm-close"
+          type="button"
+          aria-label="Sulge kinnitus"
+        >
+          ×
+        </button>
+        <h3>Tagasi avalehele?</h3>
+        <p>Kas oled kindel, et tahad praegusest levelist lahkuda?</p>
+        <div class="confirm-actions">
+          <button id="cancelHomeBtn" class="secondary-btn" type="button">
+            Jätka mängu
+          </button>
+          <button id="confirmHomeBtn" class="primary-btn" type="button">
+            Jah, tagasi
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div id="infoModal" class="modal hidden" aria-modal="true" role="dialog">
+      <div class="modal-card">
+        <button class="close-modal" type="button" aria-label="Sulge info">
+          ×
+        </button>
+        <h3 id="infoTitle">Toiduaine</h3>
+        <div id="infoContent" class="info-content"></div>
+      </div>
+    </div>
+
+    <div id="resultModal" class="modal hidden" aria-modal="true" role="dialog">
+      <div class="modal-card result-card">
+        <h3 id="resultTitle">Tulemus</h3>
+        <div id="resultText" class="result-content"></div>
+        <button id="closeResultBtn" class="primary-btn" type="button">
+          Jätka
+        </button>
+      </div>
+    </div>
+
+    <script src="foods.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
