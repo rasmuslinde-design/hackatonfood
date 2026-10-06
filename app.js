@@ -27,10 +27,11 @@ const FOOD_IMAGES = {
   smoothie: "Fast food/Energy drink.png",
   proteinShake: "Eggs and Dairy/Milk 1.png",
 };
-
 function getFoodImage(item) {
   if (item.image) {
-    return `${FOOD_ASSET_ROOT}/${item.image}`;
+    return item.image.includes("/")
+      ? `${FOOD_ASSET_ROOT}/${item.image}`
+      : item.image;
   }
   const imagePath = FOOD_IMAGES[item.id];
   return imagePath ? `${FOOD_ASSET_ROOT}/${imagePath}` : "";
@@ -161,7 +162,7 @@ const LEVELS = [
       },
       {
         id: "soda",
-        name: "Soda",
+        name: "Limonaad",
         icon: "🥤",
         tag: "Kiire suhkur",
         type: "sugar",
@@ -351,8 +352,6 @@ const LEVELS = [
   },
 ];
 
-const dailyTasks = window.DAILY_TASKS || {};
-
 function shuffleItems(items) {
   return items
     .map((item) => ({ item, sort: Math.random() }))
@@ -360,85 +359,201 @@ function shuffleItems(items) {
     .map(({ item }) => item);
 }
 
-function applyFoodDatabase() {
+const VALID_FOOD_FLAVORS = new Set(["savory", "sweet", "neutral"]);
+const VALID_FOOD_TYPES = new Set(["carb", "protein", "produce", "junk"]);
+const LEGACY_FOOD_TYPES = {
+  "slow-carb": "carb",
+  veg: "produce",
+  sugar: "junk",
+};
+
+function normalizeFoodType(type) {
+  if (VALID_FOOD_TYPES.has(type)) return type;
+  return Object.prototype.hasOwnProperty.call(LEGACY_FOOD_TYPES, type)
+    ? LEGACY_FOOD_TYPES[type]
+    : "junk";
+}
+
+function isFoodAvailableForLevel(item, levelId) {
+  const mealTypes = Array.isArray(item.mealType) ? item.mealType : ["any"];
+  const name = String(item.name || "").toLowerCase();
+  const image = String(item.image || "").toLowerCase();
+  const breakfastOnly =
+    /kaerahelbepuder|hommikusöögihelbed/.test(name) ||
+    /(?:^|\/)(?:porridge|cereal)(?:\s+\d+)?\.png$/.test(image);
+
+  if (levelId !== 1 && breakfastOnly) return false;
+  if (mealTypes.includes("any")) return true;
+  if (levelId === 1) return mealTypes.includes("breakfast");
+  if (levelId === 2) {
+    return mealTypes.some((type) =>
+      ["main_meal", "lunch", "dinner"].includes(type),
+    );
+  }
+  if (levelId === 3) {
+    return mealTypes.some((type) =>
+      ["main_meal", "dinner", "post-workout"].includes(type),
+    );
+  }
+  return true;
+}
+
+function generateLevelFoods(levelId = null) {
   const database = window.FOOD_DATABASE || {};
 
+  const normalizeItems = (items, sourceLevelId) =>
+    items
+      .map((sourceItem, index) => {
+        const item =
+          sourceItem && typeof sourceItem === "object" ? sourceItem : {};
+        const points = Number(item.points);
+        return {
+          ...item,
+          id: item.id || `level-${sourceLevelId}-food-${index}`,
+          name:
+            typeof item.name === "string" && item.name.trim()
+              ? item.name
+              : `Toiduaine ${index + 1}`,
+          flavor: VALID_FOOD_FLAVORS.has(item.flavor)
+            ? item.flavor
+            : "neutral",
+          type: normalizeFoodType(item.type),
+          points: Number.isFinite(points) ? points : 0,
+        };
+      })
+      .filter((item) => item.selectable !== false);
+  const allHealthyFallbackItems = Object.entries(database).flatMap(
+    ([sourceLevelId, items]) =>
+      Array.isArray(items)
+        ? normalizeItems(items, sourceLevelId)
+            .filter((item) => item.type !== "junk" && item.healthy === true)
+            .map((item) => ({
+              ...item,
+              id: `fallback-${sourceLevelId}-${item.id}`,
+            }))
+        : [],
+  );
+
   LEVELS.forEach((level) => {
-    const sourceItems = database[level.id];
-    if (!sourceItems || sourceItems.length === 0) return;
+    if (levelId !== null && level.id !== Number(levelId)) return;
+    const databaseItems = database[level.id];
+    const sourceItems =
+      Array.isArray(databaseItems) && databaseItems.length
+        ? databaseItems
+        : Array.isArray(level.items)
+          ? level.items
+          : [];
+    const normalizedItems = normalizeItems(sourceItems, level.id).filter(
+      (item) => isFoodAvailableForLevel(item, level.id),
+    );
+    const healthyFallbackItems = allHealthyFallbackItems.filter((item) =>
+      isFoodAvailableForLevel(item, level.id),
+    );
+    const targetCounts =
+      level.id === 1
+        ? { carb: 3, protein: 2, produce: 2, junk: 1 }
+        : level.id === 2 || level.id === 3
+          ? { carb: 3, protein: 3, produce: 1, junk: 1 }
+          : { carb: 2, protein: 2, produce: 2, junk: 1 };
+    const selected = [];
+    const selectedIds = new Set();
+    const selectedNames = new Set();
+    const flavorCount = (flavor) =>
+      selected.filter((item) => item.flavor === flavor).length;
+    const groupCount = (type) =>
+      selected.filter((item) => item.type === type).length;
+    const addRandomItem = (candidates) => {
+      const available = shuffleItems(candidates).filter(
+        (item) =>
+          !selectedIds.has(item.id) &&
+          !selectedNames.has(item.name.toLowerCase()),
+      );
+      if (!available.length || selected.length >= 8) return false;
 
-    const healthy = shuffleItems(
-      sourceItems.filter((item) => item.healthy === true),
-    );
-    const unhealthy = shuffleItems(
-      sourceItems.filter((item) => item.healthy === false),
-    );
-    const selected = [
-      ...healthy.slice(0, Math.min(3, healthy.length)),
-      ...unhealthy.slice(0, Math.min(3, unhealthy.length)),
-    ];
-    const selectedIds = new Set(selected.map((item) => item.id));
-    const remaining = shuffleItems(
-      sourceItems.filter((item) => !selectedIds.has(item.id)),
-    );
+      const nonNeutral = available.filter(
+        (item) => item.flavor === "savory" || item.flavor === "sweet",
+      );
+      const underFlavorTarget = nonNeutral.filter(
+        (item) => flavorCount(item.flavor) < 3,
+      );
+      const neutral = available.filter((item) => item.flavor === "neutral");
+      const balancedCandidates = underFlavorTarget.length
+        ? underFlavorTarget.filter(
+            (item) =>
+              flavorCount(item.flavor) ===
+              Math.min(...underFlavorTarget.map((food) => flavorCount(food.flavor))),
+          )
+        : neutral.length && flavorCount("neutral") < 2
+          ? neutral
+          : available;
+      const item = shuffleItems(balancedCandidates)[0];
+      selected.push(item);
+      selectedIds.add(item.id);
+      selectedNames.add(item.name.toLowerCase());
+      return true;
+    };
 
-    level.items = shuffleItems([...selected, ...remaining])
-      .slice(0, Math.min(8, sourceItems.length))
-      .map((item) => ({
-        ...item,
-        icon: "",
-        tag: item.tag,
-        type:
-          item.healthy === true
-            ? "healthy"
-            : item.healthy === false
-              ? "unhealthy"
-              : "neutral",
-        sugar: item.points < 0 ? Math.abs(item.points) / 3 : 0,
-        protein: item.healthy === true ? 3 : 0,
-        energy: Math.max(1, Math.round((item.points + 15) / 6)),
-        description: item.tag,
-      }));
+    const addFromType = (type) => {
+      if (groupCount(type) >= 3) return false;
+      if (addRandomItem(normalizedItems.filter((item) => item.type === type))) {
+        return true;
+      }
+      return (
+        type !== "junk" &&
+        addRandomItem(
+          healthyFallbackItems.filter((item) => item.type === type),
+        )
+      );
+    };
+
+    Object.entries(targetCounts).forEach(([type, target]) => {
+      while (groupCount(type) < target && selected.length < 8) {
+        if (!addFromType(type)) break;
+      }
+    });
+
+    const weightedTypes =
+      level.id === 2 || level.id === 3
+        ? ["carb", "protein", "carb", "protein", "produce"]
+        : ["carb", "protein", "produce"];
+    while (selected.length < 8) {
+      if (!weightedTypes.some((type) => addFromType(type))) break;
+    }
+
+    level.items = shuffleItems(selected).map((item) => ({
+      ...item,
+      icon: "",
+      sugar: item.points < 0 ? Math.abs(item.points) / 3 : 0,
+      protein: item.healthy === true ? 3 : 0,
+      energy: Math.max(1, Math.round((item.points + 15) / 6)),
+      tag: item.tag || "",
+      description: item.tag || item.description || "",
+    }));
   });
 }
 
-applyFoodDatabase();
+generateLevelFoods();
 
-const SCENARIO_VARIANTS = [
-  [
-    "Kell on 07:30! Täna ootab sind ees 3-tunnine matemaatikaeksam. Et pea püsiks terav ja kõht ei hakkaks poole eksami ajal valjult korisema, vajad hommikusööki, mis annab pikaajalist energiat. Pane taldrikule sobivad asjad!",
-    "Kell on 13:00. Rasked tunnid on seljataga, aga ees ootab veel füüsika praktikum ja meeskonnatöö. Keha vajab akude laadimiseks täisväärtuslikku eineid. Kasuta taldrikureeglit, et kõht saaks täis, aga ei tekiks rasket 'toidukoomat'!",
-    "Kell on 16:30! Sul algab tunni aja pärast kossutrenn ja kesta tuleb terve tund aega järjest. Vajad vahepala, mis annab kiirelt kättesaadavat energiat, kuid ei jää kõhtu raskelt seisma. Mida valid?",
-    "Kell on 19:30. Tegus päev on seljataga, trenn tehtud ja eksam sooritatud! Keha vajab toitaineid lihaste taastumiseks ning ettevalmistust rahuliku une jaoks. Pane kokku tasakaalustatud õhtusöök.",
-  ],
-  [
-    "Kell on 07:15! Täna on kooli spordipäev. Vajad hommikusööki, mis annab pikalt energiat ega tee kõhtu raskeks. Mida paned taldrikule?",
-    "Kell on 12:30! Spordipäev on läbi ja ees ootab kontrolltöö. Keha ja aju vajavad uut kütust. Pane kokku tasakaalustatud lõuna!",
-    "Kell on 16:00! Suundud huviringi või trenni. Vajad kerget vahepala fookuse ja energia hoidmiseks. Mida valid?",
-    "Kell on 19:30! Päev on läbi ja aeg on taastuda. Valmista kerge õhtusöök, et tagada hea uni. Mida sööd?",
-  ],
-  [
-    "Kell on 07:30! Täna on koolis tihe projektipäev ja suur esitlus. Vajad hommikusööki, mis hoiab pea selge ja meele erksana. Mida paned taldrikule?",
-    "Kell on 12:45! Esitlus läks hästi, aga ees ootab veel mitu tundi rühmatööd. Keha vajab uut energiat. Mida valid lõunaks?",
-    "Kell on 16:15! Kool on läbi ja lähed sõpradega õue rattaga sõitma. Vajad kerget vahepala, mis annab kiiret energiat. Mida võtad?",
-    "Kell on 19:30! Pikk ja aktiivne päev on seljataga. Valmista toitav, kuid kergelt seeditav õhtusöök hea une tagamiseks. Mida sööd?",
-  ],
-  [
-    "Kell on 07:30! Täna lähete klassiga pikale loodusmatkale. Vajad toitvat hommikusööki, mis annab pika põhitagavara. Mida paned taldrikule?",
-    "Kell on 13:00! Olete läbinud mitu kilomeetrit ja aeg on piknikuks. Keha vajab uut jõudu matka jätkamiseks. Mida võtad seljakotist?",
-    "Kell on 16:30! Matk on seljataga ja sõidate bussiga kodu poole. Vajad kerget vahepala, et õhtusöögini vastu pidada. Mida näksid?",
-    "Kell on 19:30! Oled jõudnud koju ja jalad on väsinud. Keha vajab toitaineid lihaste taastumiseks ja heaks uneks. Mida sööd õhtuks?",
-  ],
-  [
-    "Kell on 07:30! Täna on koolis suur etendus ja sa astud lavale. Vajad hommikusööki, mis rahustab närve, annab energiat ega tee kõhtu raskeks. Mida paned taldrikule?",
-    "Kell on 12:30! Peaproov läks hästi ja lavale minekuni on veel paar tundi. Vajad stabiilset kütust, et fookus ei kaoks. Mida sööd lõunaks?",
-    "Kell on 16:30! Etendus algab kohe ja lavanärv on sees. Vajad kerget vahepala, mis annab kiire särtsu, kuid ei jää kõhtu kripeldama. Mida võtad?",
-    "Kell on 19:30! Etendus oli tohutu edu ja aplaus oli võimas! Nüüd on aeg keha täramiseks ja rahulikuks taastumiseks. Mida sööd õhtuks?",
-  ],
-];
+function assignRescuedFoods(levelId = null) {
+  LEVELS.forEach((level) => {
+    if (levelId !== null && level.id !== Number(levelId)) return;
+    const eligibleItems = level.items.filter((item) => item.type !== "junk");
+    const rescueCount = eligibleItems.length
+      ? Math.min(eligibleItems.length, 1 + Math.floor(Math.random() * 2))
+      : 0;
+    const rescuedIds = new Set(
+      shuffleItems(eligibleItems)
+        .slice(0, rescueCount)
+        .map((item) => item.id),
+    );
+    level.items = level.items.map((item) => ({
+      ...item,
+      isRescued: rescuedIds.has(item.id),
+    }));
+  });
+}
 
-const activeScenarioVariant =
-  SCENARIO_VARIANTS[Math.floor(Math.random() * SCENARIO_VARIANTS.length)];
+assignRescuedFoods();
 
 const state = {
   selectedLevel: 1,
@@ -467,6 +582,8 @@ const elements = {
   toast: document.getElementById("toast"),
   levelPromptInline: document.getElementById("levelPromptInline"),
   confirmHomeModal: document.getElementById("confirmHomeModal"),
+  hintModal: document.getElementById("hintModal"),
+  hintText: document.getElementById("hintText"),
   infoModal: document.getElementById("infoModal"),
   infoTitle: document.getElementById("infoTitle"),
   infoContent: document.getElementById("infoContent"),
@@ -534,6 +651,12 @@ function switchView(viewName) {
   const isHome = viewName === "home";
   elements.homeView.classList.toggle("hidden", !isHome);
   elements.gameView.classList.toggle("hidden", isHome);
+  window.homePyramid3D?.setActive(isHome);
+  window.dispatchEvent(
+    new CustomEvent("home-pyramid-visibility", {
+      detail: { active: isHome },
+    }),
+  );
 }
 
 function getLevelById(levelId) {
@@ -553,28 +676,65 @@ function renderHomePyramid() {
     .forEach((level) => {
       const isUnlocked = level.id <= state.unlockedLevel;
       const isSelected = level.id === state.selectedLevel;
+      const names = {
+        1: "Teraviljad",
+        2: "Köögiviljad ja puuviljad",
+        3: "Valgud ja piimatooted",
+        4: "Maiustused ja rasvad",
+      };
 
       const button = document.createElement("button");
       button.type = "button";
-      button.className = `level-layer ${isSelected ? "selected" : ""} ${!isUnlocked ? "locked" : ""}`;
+      button.className = `pyramid-level-button ${isSelected ? "selected" : ""} ${!isUnlocked ? "locked" : ""}`;
       button.dataset.level = String(level.id);
-      button.textContent = level.label;
+      button.textContent = `${level.label} · ${names[level.id]}`;
       button.disabled = !isUnlocked;
+      button.setAttribute("aria-pressed", String(isSelected));
 
       button.addEventListener("click", () => {
-        if (!isUnlocked) {
-          showToast("See tase on veel lukus.");
-          return;
-        }
-        state.selectedLevel = level.id;
-        renderHomePyramid();
-        updateStartButtonState();
+        selectHomeLevel(level.id);
+      });
+
+      button.addEventListener("mouseenter", () => {
+        window.dispatchEvent(
+          new CustomEvent("home-pyramid-hover", {
+            detail: { level: level.id },
+          }),
+        );
+      });
+      button.addEventListener("mouseleave", () => {
+        window.dispatchEvent(
+          new CustomEvent("home-pyramid-hover", { detail: { level: null } }),
+        );
       });
 
       elements.pyramid.appendChild(button);
     });
 
   updateStartButtonState();
+  window.homePyramid3D?.setState({
+    selectedLevel: state.selectedLevel,
+    unlockedLevel: state.unlockedLevel,
+  });
+  window.dispatchEvent(
+    new CustomEvent("home-pyramid-state", {
+      detail: {
+        selectedLevel: state.selectedLevel,
+        unlockedLevel: state.unlockedLevel,
+      },
+    }),
+  );
+}
+
+function selectHomeLevel(levelId) {
+  const level = getLevelById(levelId);
+  if (level.id > state.unlockedLevel) {
+    showToast("See tase on veel lukus.");
+    return;
+  }
+
+  state.selectedLevel = level.id;
+  renderHomePyramid();
 }
 
 function startGame() {
@@ -583,6 +743,11 @@ function startGame() {
     return;
   }
 
+  if (state.selectedLevel === 1) {
+    state.levelResults = [];
+  }
+  generateLevelFoods(state.selectedLevel);
+  assignRescuedFoods(state.selectedLevel);
   state.currentLevel = state.selectedLevel;
   state.bowlItems = [];
   renderGameLevel();
@@ -592,16 +757,9 @@ function startGame() {
 
 function renderGameLevel(resetIngredients = true) {
   const level = getLevelById(state.currentLevel);
-  const dailyTask = dailyTasks[level.id];
   elements.currentLevelLabel.textContent = level.label;
-  elements.objectiveText.textContent = dailyTask
-    ? dailyTask.title
-    : level.objective;
-  elements.levelPromptInline.innerHTML = dailyTask
-    ? `<strong>${dailyTask.title}</strong><br>${dailyTask.task}`
-    : activeScenarioVariant[state.currentLevel - 1] ||
-      level.prompt ||
-      level.objective;
+  elements.objectiveText.textContent = level.objective;
+  elements.levelPromptInline.textContent = level.prompt || level.objective;
   document.getElementById("submitMealBtn").textContent = "Sega & Söö";
 
   elements.ingredientShelf.innerHTML = "";
@@ -612,37 +770,67 @@ function renderGameLevel(resetIngredients = true) {
   document.getElementById("prevIngredientsBtn").classList.remove("is-visible");
   document.getElementById("nextIngredientsBtn").classList.remove("is-visible");
   const pageStart = state.ingredientPage * 4;
-  level.items.slice(pageStart, pageStart + 4).forEach((item) => {
-    const card = document.createElement("div");
-    card.className = "ingredient-card food-card";
-    card.dataset.itemId = item.id;
-    card.setAttribute("tabindex", "0");
-    card.setAttribute("aria-label", `${item.name} toiduaine`);
+  const visibleItems = level.items.slice(pageStart, pageStart + 4);
+  for (let rowIndex = 0; rowIndex < visibleItems.length; rowIndex += 2) {
+    const row = document.createElement("div");
+    row.className = "food-row";
+    row.setAttribute("role", "group");
+    row.setAttribute("aria-label", `Toiduainete rida ${rowIndex / 2 + 1}`);
 
-    const infoButton = document.createElement("button");
-    infoButton.type = "button";
-    infoButton.className = "info-btn";
-    infoButton.textContent = "i";
-    infoButton.setAttribute("aria-label", `Info ${item.name}`);
-    infoButton.addEventListener("click", (event) => {
-      event.stopPropagation();
-      openInfoModal(item);
+    visibleItems.slice(rowIndex, rowIndex + 2).forEach((item) => {
+      const card = document.createElement("div");
+      card.className = "ingredient-card food-card";
+      card.dataset.itemId = item.id;
+      card.setAttribute("aria-label", `${item.name} toiduaine${item.isRescued ? ", päästetud toit" : ""}`);
+      card.setAttribute("tabindex", "0");
+      card.setAttribute("role", "button");
+
+      const infoButton = document.createElement("button");
+      infoButton.type = "button";
+      infoButton.className = "info-btn";
+      infoButton.textContent = "i";
+      infoButton.setAttribute("aria-label", `Info ${item.name}`);
+      infoButton.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openInfoModal(item);
+      });
+
+      card.innerHTML = `
+        <div class="card-icon" aria-hidden="true">
+          <img class="food-image" src="${getFoodImage(item)}" alt="" />
+        </div>
+        <div class="card-meta">
+          <span class="card-name">${item.name}</span>
+          <span class="card-tag">${item.tag}</span>
+        </div>
+      `;
+
+      if (item.isRescued) {
+        const rescuedBadge = document.createElement("span");
+        rescuedBadge.className = "rescued-food-badge";
+        rescuedBadge.textContent = "♻️ Päästetud toit!";
+        rescuedBadge.title =
+          "Päästetud toit! Selle ära söömine hoiab ära toiduraiskamise ja annab lisapunkte.";
+        rescuedBadge.setAttribute("aria-label", rescuedBadge.title);
+        card.appendChild(rescuedBadge);
+      }
+      card.appendChild(infoButton);
+      card.appendChild(infoButton);
+      card.addEventListener("keydown", (event) => {
+        if (event.target !== card || !["Enter", " "].includes(event.key)) {
+          return;
+        }
+        event.preventDefault();
+        addItemToBowl(item.id);
+      });
+      card.addEventListener("pointerdown", (event) =>
+        beginDrag(event, item.id),
+      );
+      row.appendChild(card);
     });
 
-    card.innerHTML = `
-      <div class="card-icon" aria-hidden="true">
-        <img class="food-image" src="${getFoodImage(item)}" alt="" />
-      </div>
-      <div class="card-meta">
-        <span class="card-name">${item.name}</span>
-        <span class="card-tag">${item.tag}</span>
-      </div>
-    `;
-
-    card.appendChild(infoButton);
-    card.addEventListener("pointerdown", (event) => beginDrag(event, item.id));
-    elements.ingredientShelf.appendChild(card);
-  });
+    elements.ingredientShelf.appendChild(row);
+  }
 
   updateIngredientNavigation();
   renderBowlItems();
@@ -656,84 +844,133 @@ function updateIngredientNavigation() {
   if (!shelf.clientWidth) {
     previousButton.classList.remove("is-visible");
     nextButton.classList.remove("is-visible");
+    previousButton.disabled = true;
+    nextButton.disabled = true;
     return;
   }
 
   const level = getLevelById(state.currentLevel);
   const pageCount = Math.max(0, Math.ceil(level.items.length / 4) - 1);
-  state.ingredientPage = Math.min(state.ingredientPage, pageCount);
+  state.ingredientPage = Math.max(
+    0,
+    Math.min(state.ingredientPage, pageCount),
+  );
   const canScrollLeft = state.ingredientPage > 0;
   const canScrollRight = state.ingredientPage < pageCount;
   previousButton.classList.toggle("is-visible", canScrollLeft);
   nextButton.classList.toggle("is-visible", canScrollRight);
+  previousButton.disabled = !canScrollLeft;
+  nextButton.disabled = !canScrollRight;
+  previousButton.setAttribute("aria-hidden", String(!canScrollLeft));
+  nextButton.setAttribute("aria-hidden", String(!canScrollRight));
+}
+
+function changeIngredientPage(direction) {
+  const level = getLevelById(state.currentLevel);
+  const lastPage = Math.max(0, Math.ceil(level.items.length / 4) - 1);
+  state.ingredientPage = Math.max(
+    0,
+    Math.min(state.ingredientPage + direction, lastPage),
+  );
+  renderGameLevel(false);
 }
 
 function beginDrag(event, itemId) {
-  if (event.pointerType === "mouse" && event.button !== 0) {
+  if (event.target.closest(".info-btn")) return;
+  if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) {
     return;
   }
 
-  if (state.dragState) {
-    cleanupDragState();
-  }
-
-  const item = getLevelById(state.currentLevel).items.find(
-    (entry) => entry.id === itemId,
-  );
-  if (!item) return;
-
-  const ghost = document.createElement("div");
-  ghost.className = "drag-ghost";
-  ghost.innerHTML = `
-    <img class="drag-food-image" src="${getFoodImage(item)}" alt="" aria-hidden="true" />
-  `;
-  document.body.appendChild(ghost);
-
+  cleanupDragState();
+  event.preventDefault();
   state.dragState = {
     itemId,
-    ghost,
-    active: true,
-    placed: false,
+    pointerId: event.pointerId,
+    startX: event.clientX,
+    startY: event.clientY,
+    active: false,
+    card: event.currentTarget,
+    ghost: null,
   };
+  document.addEventListener("pointermove", moveDrag);
+  document.addEventListener("pointerup", finishDrag);
+  document.addEventListener("pointercancel", cancelDrag);
+}
 
-  const move = (moveEvent) => {
-    if (!state.dragState || !state.dragState.active) return;
-    ghost.style.left = `${moveEvent.clientX}px`;
-    ghost.style.top = `${moveEvent.clientY}px`;
-  };
+function moveDrag(event) {
+  const drag = state.dragState;
+  if (!drag || event.pointerId !== drag.pointerId) return;
 
-  const finish = (endEvent) => {
-    if (!state.dragState) return;
+  if (
+    !drag.active &&
+    Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) < 8
+  ) {
+    return;
+  }
 
-    const bowlRect = elements.bowl.getBoundingClientRect();
-    const insideBowl =
-      endEvent.clientX >= bowlRect.left &&
-      endEvent.clientX <= bowlRect.right &&
-      endEvent.clientY >= bowlRect.top &&
-      endEvent.clientY <= bowlRect.bottom;
-
-    if (insideBowl && !state.dragState.placed) {
-      state.dragState.placed = true;
-      addItemToBowl(itemId);
+  if (!drag.active) {
+    drag.active = true;
+    drag.card.classList.add("is-dragging");
+    const item = getLevelById(state.currentLevel).items.find(
+      (entry) => entry.id === drag.itemId,
+    );
+    if (item) {
+      drag.ghost = document.createElement("div");
+      drag.ghost.className = "drag-ghost";
+      drag.ghost.innerHTML = `
+        <img class="drag-food-image" src="${getFoodImage(item)}" alt="" aria-hidden="true" />
+      `;
+      document.body.appendChild(drag.ghost);
     }
+  }
 
+  if (drag.ghost) {
+    drag.ghost.style.left = `${event.clientX}px`;
+    drag.ghost.style.top = `${event.clientY}px`;
+  }
+
+  const bowl = elements.bowl.getBoundingClientRect();
+  const overBowl =
+    event.clientX >= bowl.left &&
+    event.clientX <= bowl.right &&
+    event.clientY >= bowl.top &&
+    event.clientY <= bowl.bottom;
+  elements.bowl.classList.toggle("is-drop-target", overBowl);
+  event.preventDefault();
+}
+
+function finishDrag(event) {
+  const drag = state.dragState;
+  if (!drag || event.pointerId !== drag.pointerId) return;
+
+  const bowl = elements.bowl.getBoundingClientRect();
+  const droppedOnBowl =
+    drag.active &&
+    event.clientX >= bowl.left &&
+    event.clientX <= bowl.right &&
+    event.clientY >= bowl.top &&
+    event.clientY <= bowl.bottom;
+  const itemId = drag.itemId;
+  cleanupDragState();
+  if (droppedOnBowl) addItemToBowl(itemId);
+}
+
+function cancelDrag(event) {
+  if (state.dragState?.pointerId === event.pointerId) {
     cleanupDragState();
-    document.removeEventListener("pointermove", move);
-    document.removeEventListener("pointerup", finish);
-  };
-
-  ghost.style.left = `${event.clientX}px`;
-  ghost.style.top = `${event.clientY}px`;
-
-  document.addEventListener("pointermove", move);
-  document.addEventListener("pointerup", finish);
+  }
 }
 
 function cleanupDragState() {
-  if (!state.dragState) return;
-  if (state.dragState.ghost && state.dragState.ghost.parentNode) {
-    state.dragState.ghost.remove();
-  }
+  const drag = state.dragState;
+  if (!drag) return;
+
+  document.removeEventListener("pointermove", moveDrag);
+  document.removeEventListener("pointerup", finishDrag);
+  document.removeEventListener("pointercancel", cancelDrag);
+  drag.card.classList.remove("is-dragging");
+  drag.ghost?.remove();
+  elements.bowl.classList.remove("is-drop-target");
   state.dragState = null;
 }
 
@@ -742,6 +979,14 @@ function addItemToBowl(itemId) {
     (entry) => entry.id === itemId,
   );
   if (!item) return;
+  if (state.bowlItems.includes(itemId)) {
+    showToast("See toiduaine on juba kausis.");
+    return;
+  }
+  if (state.bowlItems.length >= 3) {
+    showToast("Kaussi mahub korraga kuni 3 toiduainet.");
+    return;
+  }
 
   state.bowlItems.push(itemId);
   renderBowlItems();
@@ -768,20 +1013,16 @@ function renderBowlItems() {
     const item = level.items.find((entry) => entry.id === itemId);
     if (!item) return;
 
-    const pill = document.createElement("div");
+    const pill = document.createElement("button");
+    pill.type = "button";
     pill.className = "bowl-item";
+    pill.setAttribute("aria-label", `Eemalda ${item.name} kausist`);
     pill.innerHTML = `
       <img class="bowl-food-image" src="${getFoodImage(item)}" alt="" />
       <span>${item.name}</span>
+      <span aria-hidden="true">×</span>
     `;
-
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.textContent = "×";
-    removeBtn.setAttribute("aria-label", `Eemalda ${item.name}`);
-    removeBtn.addEventListener("click", () => removeItemFromBowl(itemId));
-
-    pill.appendChild(removeBtn);
+    pill.addEventListener("click", () => removeItemFromBowl(itemId));
     elements.bowlItems.appendChild(pill);
   });
 }
@@ -890,8 +1131,8 @@ function evaluateMeal() {
 }
 
 function getMealGrade(score) {
-  if (score >= 30) return "A";
-  if (score >= 15) return "B";
+  if (score >= 90) return "A";
+  if (score >= 50) return "B";
   return "C";
 }
 
@@ -899,6 +1140,22 @@ function getMealFeedback(grade) {
   if (grade === "A") return "Tegelane on täis energiat, laud on puhas!";
   if (grade === "B") return "Kõht on täis, aga energia kõigub!";
   return "Tegelane väsis kiiresti!";
+}
+
+function getFoodWasteTip(levelId) {
+  const tips = {
+    1: "Kaval viis: kasuta eelmise päeva leiba krutoonides või röstsaias, et toit ei läheks raisku.",
+    2: "Kaval viis: kasuta küpseid puuvilju smuutis, et vältida nende prügikasti viskamist!",
+    3: "Kaval viis: kasuta üle jäänud muna, kala või juustu järgmise toidukorra omletis või salatis.",
+    4: "Kaval viis: jaga maiustused portsjoniteks ja hoia ülejäänu hilisemaks suupisteks.",
+  };
+  return tips[levelId] || tips[1];
+}
+
+function getFoodScore(item) {
+  const points = Number(item.points || 0);
+  if (!item.isRescued) return points;
+  return (points < 0 ? Math.abs(points) : points) + 10;
 }
 
 function selectedFoodMarkup(items) {
@@ -910,7 +1167,8 @@ function selectedFoodMarkup(items) {
           <div>
             <strong>${item.name}</strong>
             <span>${item.tag}</span>
-            <span class="feedback-impact ${item.points >= 0 ? "positive" : "negative"}">${item.points > 0 ? "+" : ""}${item.points} mõju</span>
+            <span class="feedback-impact ${getFoodScore(item) >= 0 ? "positive" : "negative"}">${getFoodScore(item) > 0 ? "+" : ""}${getFoodScore(item)} mõju</span>
+            ${item.isRescued ? '<span class="rescued-food-badge" title="Päästetud toit! Selle ära söömine hoiab ära toiduraiskamise ja annab lisapunkte.">♻️ Päästetud toit!</span>' : ""}
           </div>
         </div>`,
     )
@@ -924,10 +1182,12 @@ function buildNewFinalSummary() {
     1,
     results.reduce((sum, result) => sum + result.items.length * 15, 0),
   );
-  const percentage = Math.max(
-    0,
-    Math.min(100, Math.round((totalScore / maximumScore) * 100)),
-  );
+  const percentage = results.length
+    ? Math.round(
+        results.reduce((sum, result) => sum + result.percentage, 0) /
+          results.length,
+      )
+    : 0;
   const healthyCount = results.reduce(
     (sum, result) =>
       sum + result.items.filter((item) => item.healthy === true).length,
@@ -942,12 +1202,27 @@ function buildNewFinalSummary() {
     1,
     results.reduce((sum, result) => sum + result.items.length, 0),
   );
-  const focus = Math.round((Math.max(0, totalScore) / maximumScore) * 100);
+  const focus = Math.min(
+    100,
+    Math.round((Math.max(0, totalScore) / maximumScore) * 100),
+  );
   const vitamins = Math.round((healthyCount / totalItems) * 100);
   const sugars = Math.max(
     0,
     100 - Math.round((unhealthyCount / totalItems) * 100),
   );
+  const rescuedFoodUsed = results.reduce(
+    (sum, result) => sum + (result.rescuedFoodUsed || 0),
+    0,
+  );
+  const rescuedFoodAvailable = results.reduce(
+    (sum, result) => sum + (result.rescuedFoodAvailable || 0),
+    0,
+  );
+  const foodSustainability = rescuedFoodAvailable
+    ? Math.round((rescuedFoodUsed / rescuedFoodAvailable) * 100)
+    : 0;
+  const foodBalance = Math.round((focus + vitamins + sugars) / 3);
   const rows = results
     .map(
       (result) => `
@@ -955,7 +1230,7 @@ function buildNewFinalSummary() {
           <th>${result.title}</th>
           <td>${result.items.map((item) => item.name).join(", ")}</td>
           <td>${result.items.map((item) => item.tag).join(", ")}</td>
-          <td>${result.score} p</td>
+          <td>${result.score} p · ${result.percentage}%${result.rescueScoreBonus ? ` <span class="rescue-bonus">(+${result.rescueScoreBonus} päästetud toidu boonus)</span>` : ""}</td>
         </tr>`,
     )
     .join("");
@@ -963,6 +1238,8 @@ function buildNewFinalSummary() {
   return `
     <div class="final-summary">
       <p class="final-percentage">${percentage}%</p>
+      <p class="final-score-breakdown">Toiduainete tasakaal: <strong>${foodBalance}%</strong> | Korruste sünergia skoor: <strong>${percentage}%</strong></p>
+      <p class="final-score-note">Üldine tulemus on korruste sünergia skooride keskmine; edenemisribad näitavad kogu mängu koondnäitajaid.</p>
       <div class="progress-list">
         <label>Pikaajaline energia &amp; fookus <strong>${focus}%</strong></label>
         <div class="progress-track"><span style="width: ${focus}%"></span></div>
@@ -970,9 +1247,17 @@ function buildNewFinalSummary() {
         <div class="progress-track"><span style="width: ${vitamins}%"></span></div>
         <label>Lisatud suhkrud &amp; rasvad <strong>${sugars}%</strong></label>
         <div class="progress-track"><span style="width: ${sugars}%"></span></div>
+        <label>Toidu Säästlikkus (%) <strong>${foodSustainability}%</strong></label>
+        <div class="progress-track"><span style="width: ${foodSustainability}%"></span></div>
       </div>
       <div class="summary-table-wrap">
         <table class="summary-table">
+          <colgroup>
+            <col />
+            <col />
+            <col />
+            <col />
+          </colgroup>
           <thead><tr><th>Tase</th><th>Valikud</th><th>Toitained</th><th>Mõju</th></tr></thead>
           <tbody>${rows}</tbody>
         </table>
@@ -990,17 +1275,70 @@ function evaluateMealV2() {
     return;
   }
 
-  const score = selectedItems.reduce(
-    (sum, item) => sum + Number(item.points || 0),
+  const count = selectedItems.length;
+  const rescuedFoodUsed = selectedItems.filter((item) => item.isRescued).length;
+  const rescuedFoodAvailable = level.items.filter(
+    (item) => item.isRescued,
+  ).length;
+  const foodScore = selectedItems.reduce(
+    (sum, item) => sum + getFoodScore(item),
     0,
   );
-  const grade = getMealGrade(score);
-  const task = dailyTasks[level.id];
+  let score = foodScore;
+  const rescueScoreBonus = rescuedFoodUsed * 10;
+  const flavors = new Set(selectedItems.map((item) => item.flavor));
+  const hasSavoryMainDish = selectedItems.some(
+    (item) =>
+      item.flavor === "savory" &&
+      (item.type === "protein" ||
+        item.type === "carb" ||
+        item.type === "junk"),
+  );
+  const hasJunkFood = selectedItems.some((item) => item.type === "junk");
+  const flavorMismatch =
+    count === 3 && hasSavoryMainDish && hasJunkFood;
+  const flavorBonus =
+    count === 3 &&
+    flavors.size === 1 &&
+    (flavors.has("savory") || flavors.has("sweet"))
+      ? 15
+      : 0;
+  const balancedTypes =
+    count === 3 &&
+    ["carb", "protein", "produce"].every((type) =>
+      selectedItems.some((item) => item.type === type),
+    );
+  const balanceBonus = balancedTypes ? 15 : 0;
+  if (flavorMismatch) score -= 15;
+  score += flavorBonus + balanceBonus;
+
+  const maxScore = count * 15 + (count === 3 ? 15 : 0);
+  const healthyBalancedMeal =
+    count === 3 &&
+    balancedTypes &&
+    !flavorMismatch &&
+    selectedItems.every((item) => item.healthy === true);
+  if (healthyBalancedMeal) score = Math.max(score, maxScore);
+
+  const portionLimit = count === 1 ? 35 : count === 2 ? 70 : 100;
+  const calculatedPercentage = Math.min(
+    100,
+    Math.round((score / maxScore) * 100),
+  );
+  const percentage = Math.min(portionLimit, Math.max(0, calculatedPercentage));
+  const grade = getMealGrade(percentage);
   state.levelResults[state.currentLevel - 1] = {
-    title: task ? task.title : level.name,
+    title: level.name,
     items: selectedItems,
     score,
+    percentage,
     grade,
+    rescuedFoodUsed,
+    rescuedFoodAvailable,
+    rescueScoreBonus,
+    flavorMismatch,
+    flavorBonus,
+    balanceBonus,
   };
   state.levelScores[state.currentLevel - 1] = score;
   state.lastResultPassed = true;
@@ -1018,9 +1356,28 @@ function evaluateMealV2() {
   elements.resultTitle.textContent = isFinalLevel
     ? "Püramiid Täidetud - Mäng Läbitud! 🏆"
     : `Hinne ${grade}`;
+  const rescueBonusMessage = rescueScoreBonus
+    ? ` <span class="rescue-bonus">(+${rescueScoreBonus} päästetud toidu boonus)</span>`
+    : "";
+  const foodWasteTip = `<p class="food-waste-tip">${getFoodWasteTip(level.id)}</p>`;
+  const portionHint =
+    count < 3
+      ? '<p class="portion-hint">Kauss on pooleldi tühi! Lisa täpselt 3 toiduainet, et saavutada 100% tulemus.</p>'
+      : "";
+  const mealFeedback = [
+    flavorMismatch
+      ? '<p class="flavor-warning">Soolane ja magus toit ei sobi selles eines hästi kokku! (−15 p)</p>'
+      : "",
+    flavorBonus
+      ? '<p class="synergy-bonus">Maitseline sünergia: +15 punkti.</p>'
+      : "",
+    balanceBonus
+      ? '<p class="synergy-bonus">Toitainete tasakaal: +15 punkti.</p>'
+      : "",
+  ].join("");
   elements.resultText.innerHTML = isFinalLevel
-    ? buildNewFinalSummary()
-    : `<div class="grade-badge grade-${grade.toLowerCase()}">${grade}</div><p class="feedback-message">${getMealFeedback(grade)}</p><p class="feedback-score">Skoor: <strong>${score}</strong></p><div class="feedback-food-list">${selectedFoodMarkup(selectedItems)}</div>`;
+    ? `${buildNewFinalSummary()}${portionHint}${mealFeedback}${foodWasteTip}`
+    : `<div class="grade-badge grade-${grade.toLowerCase()}">${grade}</div><p class="feedback-message">${getMealFeedback(grade)}</p><p class="feedback-score">Tulemus: <strong>${percentage}%</strong> · Skoor: <strong>${score}</strong>${rescueBonusMessage}</p>${portionHint}${mealFeedback}<div class="feedback-food-list">${selectedFoodMarkup(selectedItems)}</div>${foodWasteTip}`;
   document.getElementById("closeResultBtn").textContent = isFinalLevel
     ? "Tagasi avalehele"
     : `Ava ${getLevelById(state.selectedLevel).label}`;
@@ -1079,6 +1436,7 @@ function closeResultModal() {
     state.currentLevel = 1;
     state.highScore = 0;
     state.levelScores = [];
+    state.levelResults = [];
     state.bowlItems = [];
     state.lastResultPassed = false;
     localStorage.removeItem(STORAGE_KEY);
@@ -1115,6 +1473,9 @@ function returnToHome() {
 
 function bindEvents() {
   elements.startGameBtn.addEventListener("click", startGame);
+  window.addEventListener("home-pyramid-select", (event) => {
+    selectHomeLevel(event.detail.level);
+  });
 
   document.getElementById("backHomeBtn").addEventListener("click", () => {
     elements.confirmHomeModal.classList.remove("hidden");
@@ -1122,7 +1483,8 @@ function bindEvents() {
 
   document.getElementById("hintBtn").addEventListener("click", () => {
     const level = getLevelById(state.currentLevel);
-    showToast(level.objective);
+    elements.hintText.textContent = level.objective;
+    elements.hintModal.classList.remove("hidden");
   });
 
   document
@@ -1139,6 +1501,16 @@ function bindEvents() {
       elements.confirmHomeModal.classList.add("hidden");
     }
   });
+  elements.hintModal
+    .querySelector(".hint-close")
+    .addEventListener("click", () => {
+      elements.hintModal.classList.add("hidden");
+    });
+  elements.hintModal.addEventListener("click", (event) => {
+    if (event.target === elements.hintModal) {
+      elements.hintModal.classList.add("hidden");
+    }
+  });
 
   document
     .getElementById("submitMealBtn")
@@ -1146,14 +1518,12 @@ function bindEvents() {
   document
     .getElementById("prevIngredientsBtn")
     .addEventListener("click", () => {
-      state.ingredientPage = Math.max(0, state.ingredientPage - 1);
-      renderGameLevel(false);
+      changeIngredientPage(-1);
     });
   document
     .getElementById("nextIngredientsBtn")
     .addEventListener("click", () => {
-      state.ingredientPage += 1;
-      renderGameLevel(false);
+      changeIngredientPage(1);
     });
   document
     .getElementById("closeResultBtn")
@@ -1167,15 +1537,6 @@ function bindEvents() {
     }
   });
 
-  elements.bowl.addEventListener("dragover", (event) => event.preventDefault());
-  elements.bowl.addEventListener("drop", (event) => {
-    event.preventDefault();
-    const itemId =
-      event.dataTransfer && event.dataTransfer.getData("text/plain");
-    if (itemId) {
-      addItemToBowl(itemId);
-    }
-  });
 }
 
 function init() {
