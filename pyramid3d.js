@@ -88,7 +88,7 @@ function initializePyramid() {
     "#pyramid .pyramid-level-button.selected",
   );
   const selectableLevels = [
-    ...document.querySelectorAll("#pyramid .pyramid-level-button:not(:disabled)"),
+    ...document.querySelectorAll("#pyramid .pyramid-level-button:not(.locked)"),
   ].map((button) => Number(button.dataset.level));
   let selectedLevel = Number(selectedButton?.dataset.level) || 1;
   let unlockedLevel = Math.max(1, ...selectableLevels);
@@ -120,6 +120,7 @@ function initializePyramid() {
     const mesh = new THREE.Mesh(geometry, material);
     mesh.rotation.y = Math.PI / 4;
     mesh.userData.level = floor.id;
+    mesh.userData.baseColor = new THREE.Color(floor.color);
     floorGroup.add(mesh);
     floorMeshes.set(floor.id, mesh);
 
@@ -218,6 +219,9 @@ function initializePyramid() {
   function updateState(event) {
     selectedLevel = event.detail.selectedLevel;
     unlockedLevel = event.detail.unlockedLevel;
+    if (hoveredLevel !== null && hoveredLevel > unlockedLevel) {
+      hoveredLevel = null;
+    }
   }
 
   function findFloor(event) {
@@ -230,7 +234,7 @@ function initializePyramid() {
   }
 
   function setHoveredLevel(level) {
-    hoveredLevel = level;
+    hoveredLevel = level !== null && level <= unlockedLevel ? level : null;
   }
 
   function beginTouchGesture(event) {
@@ -242,7 +246,7 @@ function initializePyramid() {
       startRotation: pyramid.rotation.y,
       moved: false,
     };
-    hoveredLevel = findFloor(event);
+    setHoveredLevel(findFloor(event));
   }
 
   function moveTouchGesture(event, pointerId = event.pointerId) {
@@ -255,7 +259,7 @@ function initializePyramid() {
     if (!touchGesture.moved) return;
 
     pyramid.rotation.y = touchGesture.startRotation + deltaX * 0.01;
-    hoveredLevel = findFloor(event);
+    setHoveredLevel(findFloor(event));
     event.preventDefault?.();
   }
 
@@ -282,8 +286,10 @@ function initializePyramid() {
       moveTouchGesture(event);
       return;
     }
-    hoveredLevel = findFloor(event);
-    canvas.style.cursor = hoveredLevel ? "pointer" : "grab";
+    const level = findFloor(event);
+    setHoveredLevel(level);
+    canvas.style.cursor =
+      level === null ? "grab" : level <= unlockedLevel ? "pointer" : "not-allowed";
   });
   canvas.addEventListener("pointerleave", () => {
     hoveredLevel = null;
@@ -322,7 +328,7 @@ function initializePyramid() {
           startRotation: pyramid.rotation.y,
           moved: false,
         };
-        hoveredLevel = findFloor(touch);
+        setHoveredLevel(findFloor(touch));
       },
       { passive: true },
     );
@@ -365,6 +371,7 @@ function initializePyramid() {
     setState({ selectedLevel: selected, unlockedLevel: unlocked }) {
       selectedLevel = selected;
       unlockedLevel = unlocked;
+      setHoveredLevel(hoveredLevel);
     },
     setHoveredLevel,
     setActive(isActive) {
@@ -391,13 +398,22 @@ function initializePyramid() {
       const group = floorGroups.get(id);
       const isHovered = hoveredLevel === id;
       const isSelected = selectedLevel === id;
+      const isLocked = id > unlockedLevel;
       group.position.z +=
         ((isHovered ? 0.16 : isSelected ? 0.08 : 0) - group.position.z) *
         Math.min(delta * 12, 1);
+      mesh.material.color
+        .copy(mesh.userData.baseColor)
+        .multiplyScalar(isLocked ? 0.48 : 1);
       mesh.material.emissive.setHex(isHovered ? 0x3a3a3a : isSelected ? 0x171717 : 0);
       shadow.material.opacity = isSelected ? 0.58 : 0;
-      mesh.material.opacity = id <= unlockedLevel ? 1 : 0.58;
-      mesh.material.transparent = id > unlockedLevel;
+      mesh.material.opacity = 1;
+      mesh.material.transparent = false;
+      group.children.forEach((child) => {
+        if (child.isSprite) {
+          child.material.color.setHex(isLocked ? 0x777777 : 0xffffff);
+        }
+      });
     });
 
     renderer.render(scene, camera);

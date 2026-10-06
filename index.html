@@ -75,6 +75,9 @@
                 ootab. Mõtle, millist energiat ja toitu sul selleks vaja läheb.
               </p>
             </article>
+            <button id="creditsBtn" class="primary-btn credits-btn" type="button">
+              Koostajad
+            </button>
           </div>
         </main>
       </section>
@@ -141,12 +144,7 @@
           <section class="bowl-panel bowl-section">
             <div class="bowl-wrap">
               <div id="bowl" class="bowl" aria-label="Kauss toiduainega">
-                <img
-                  class="bowl-image"
-                  src="kauss.png"
-                  alt=""
-                  aria-hidden="true"
-                />
+                <canvas id="bowlCanvas" class="bowl-canvas" aria-hidden="true"></canvas>
                 <div id="bowlItems" class="bowl-items"></div>
               </div>
             </div>
@@ -216,6 +214,30 @@
       </div>
     </div>
 
+    <div
+      id="creditsModal"
+      class="modal hidden"
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="creditsTitle"
+    >
+      <div class="modal-card">
+        <button
+          class="close-modal credits-close"
+          type="button"
+          aria-label="Sulge koostajate aken"
+        >
+          ×
+        </button>
+        <h3 id="creditsTitle">Koostajad</h3>
+        <ul class="credits-list">
+          <li>Rasmus Linde</li>
+          <li>Roven Piho</li>
+          <li>George Edward Piil</li>
+        </ul>
+      </div>
+    </div>
+
     <div id="resultModal" class="modal hidden" aria-modal="true" role="dialog">
       <div class="modal-card result-card">
         <h3 id="resultTitle">Tulemus</h3>
@@ -229,5 +251,6 @@
     <script src="foods.js"></script>
     <script src="app.js"></script>
     <script type="module" src="pyramid3d.js"></script>
+    <script type="module" src="bowl3d.js"></script>
   </body>
 </html>

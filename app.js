@@ -582,6 +582,7 @@ const elements = {
   toast: document.getElementById("toast"),
   levelPromptInline: document.getElementById("levelPromptInline"),
   confirmHomeModal: document.getElementById("confirmHomeModal"),
+  creditsModal: document.getElementById("creditsModal"),
   hintModal: document.getElementById("hintModal"),
   hintText: document.getElementById("hintText"),
   infoModal: document.getElementById("infoModal"),
@@ -688,8 +689,11 @@ function renderHomePyramid() {
       button.className = `pyramid-level-button ${isSelected ? "selected" : ""} ${!isUnlocked ? "locked" : ""}`;
       button.dataset.level = String(level.id);
       button.textContent = `${level.label} · ${names[level.id]}`;
-      button.disabled = !isUnlocked;
+      button.setAttribute("aria-disabled", String(!isUnlocked));
       button.setAttribute("aria-pressed", String(isSelected));
+      if (!isUnlocked) {
+        button.title = "See tase on veel lukus.";
+      }
 
       button.addEventListener("click", () => {
         selectHomeLevel(level.id);
@@ -1473,6 +1477,9 @@ function returnToHome() {
 
 function bindEvents() {
   elements.startGameBtn.addEventListener("click", startGame);
+  document.getElementById("creditsBtn").addEventListener("click", () => {
+    elements.creditsModal.classList.remove("hidden");
+  });
   window.addEventListener("home-pyramid-select", (event) => {
     selectHomeLevel(event.detail.level);
   });
@@ -1534,6 +1541,16 @@ function bindEvents() {
   elements.infoModal.addEventListener("click", (event) => {
     if (event.target === elements.infoModal) {
       closeInfoModal();
+    }
+  });
+  elements.creditsModal
+    .querySelector(".credits-close")
+    .addEventListener("click", () => {
+      elements.creditsModal.classList.add("hidden");
+    });
+  elements.creditsModal.addEventListener("click", (event) => {
+    if (event.target === elements.creditsModal) {
+      elements.creditsModal.classList.add("hidden");
     }
   });
 
