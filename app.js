@@ -757,6 +757,7 @@ function startGame() {
   renderGameLevel();
   switchView("game");
   requestAnimationFrame(updateIngredientNavigation);
+  if (state.currentLevel >= LEVELS.length) window.PandaCards?.preload();
 }
 
 function renderGameLevel(resetIngredients = true) {
@@ -1179,6 +1180,17 @@ function selectedFoodMarkup(items) {
     .join("");
 }
 
+const GAMBA_MIN_PERCENT = 70;
+
+function getOverallPercentage(results = state.levelResults.filter(Boolean)) {
+  return results.length
+    ? Math.round(
+        results.reduce((sum, result) => sum + result.percentage, 0) /
+          results.length,
+      )
+    : 0;
+}
+
 function buildNewFinalSummary() {
   const results = state.levelResults.filter(Boolean);
   const totalScore = results.reduce((sum, result) => sum + result.score, 0);
@@ -1186,12 +1198,7 @@ function buildNewFinalSummary() {
     1,
     results.reduce((sum, result) => sum + result.items.length * 15, 0),
   );
-  const percentage = results.length
-    ? Math.round(
-        results.reduce((sum, result) => sum + result.percentage, 0) /
-          results.length,
-      )
-    : 0;
+  const percentage = getOverallPercentage(results);
   const healthyCount = results.reduce(
     (sum, result) =>
       sum + result.items.filter((item) => item.healthy === true).length,
@@ -1385,6 +1392,18 @@ function evaluateMealV2() {
   document.getElementById("closeResultBtn").textContent = isFinalLevel
     ? "Tagasi avalehele"
     : `Ava ${getLevelById(state.selectedLevel).label}`;
+  let gambaOptions = {};
+  if (isFinalLevel) {
+    const overall = getOverallPercentage();
+    const locked = overall < GAMBA_MIN_PERCENT;
+    gambaOptions = {
+      locked,
+      hint: locked
+        ? `GAMBA! avaneb alates ${GAMBA_MIN_PERCENT}% üldtulemusest. Sinu tulemus: ${overall}%. Proovi uuesti!`
+        : `Üldtulemus ${overall}% – kirst on avatud!`,
+    };
+  }
+  window.PandaCards?.setGambaAvailable(isFinalLevel, gambaOptions);
   elements.resultModal.classList.remove("hidden");
 }
 
@@ -1433,6 +1452,7 @@ function closeInfoModal() {
 
 function closeResultModal() {
   elements.resultModal.classList.add("hidden");
+  window.PandaCards?.setGambaAvailable(false);
 
   if (state.currentLevel >= LEVELS.length && state.lastResultPassed) {
     state.selectedLevel = 1;

@@ -1,6 +1,6 @@
 # NutriKauss
 
-NutriKauss on eestikeelne, brauseris mängitav toitumisõppe mäng. Mängija koostab eri olukordadeks sobivaid eineid, õpib toidugruppe tasakaalustama ja märkab toite, mida saab toiduraiskamise vältimiseks ära kasutada. Avalehel pöörleb interaktiivne 3D-toidupüramiid ning mänguvaates pöörleb 3D-kauss.
+NutriKauss on eestikeelne, brauseris mängitav toitumisõppe mäng. Mängija koostab eri olukordadeks sobivaid eineid, õpib toidugruppe tasakaalustama ja märkab toite, mida saab toiduraiskamise vältimiseks ära kasutada. Avalehel pöörleb interaktiivne 3D-toidupüramiid ning mänguvaates pöörleb 3D-kauss. Mängu lõpetamisel saab kirstust võita kogutavaid Panda kaarte.
 
 ## Mängureeglid
 
@@ -44,7 +44,50 @@ Pärast eine hindamist avaneb järgmine tase. Taseme avamine ei eelda kindla hin
 - **Avaleht:** klõpsa või puuduta püramiidi korrust, et see valida. Lohista püramiidil sõrmega selle pööramiseks; hiirega saab korrustel hõljuda ja neid valida.
 - **Toidud:** lohista toit kaussi hiire või sõrmega. Tavaline klõps toidukaardil toitu kaussi ei lisa.
 - **Kausis olev toit:** klõpsa või puuduta toidu silti selle eemaldamiseks.
-- **Vihje:** mänguvaate `?` nupp avab taseme eesmärgi. Majakujuline nupp küsib enne avalehele naasmist kinnitust.
+- **Hint:** mänguvaate pirnipildiga nupp avab taseme eesmärgi.
+- **Home:** majapildiga nupp küsib enne avalehele naasmist kinnitust.
+- **Panda kaardid:** avalehel pealkirja „Vali tase“ kõrval olev nupp avab kaardikogu.
+
+## Panda kaardid ja GAMBA!
+
+### Kaardikogu
+
+Avalehe nupp **Panda kaardid** avab kogu, kus on täpselt 2 veergu ja 10 rida (kokku 20 kaarti) järjekorras Tavaline → Haruldane → Üliharuldane → Legendaarne.
+
+- Lukus kaart on näha mustana (`filter: brightness(0)`) ja kergelt tumendatuna. Kui brauser lubab pildi andmeid lugeda, kuvatakse see panda mustas siluetis.
+- Lahti lukustatud kaart on täisvärvides. Sellele klõpsates saab selle aktiivseks tegelaseks; aktiivne kaart saab rohelise piirjoone ja kuldse sära.
+- Lahti lukustatud kaardid ja aktiivne kaart säilivad brauseri `localStorage`-is (vt allpool).
+
+### GAMBA! kirst
+
+Pärast 4. korruse lõpetamist ilmub tulemuse aknasse nupp **GAMBA!**. Selle vajutamisel avaneb tume kirstu pop-up, kus kaardirulett liigub vasakult paremale: algul väga kiiresti, siis sujuvalt aeglustudes, kuni jääb seisma võidetud kaardi peal. Seejärel kuvatakse teade **UUS KAART LAHTI LUKUSTATUD!**, kaart lisatakse kogusse ja selle saab kohe samast aknast aktiivseks teha (või hiljem kaardikogust). Kui kaart on juba olemas, antakse sellest teada. Iga lõpetatud mänguring annab ühe kirstu.
+
+| Haruldus | Kaust | Kaarte | Võidu tõenäosus |
+| --- | --- | --- | --- |
+| Tavaline (Common) | `skinid/common/` | 6 | 65% |
+| Haruldane (Rare) | `skinid/rare/` | 6 | 22% |
+| Üliharuldane (Super Rare) | `skinid/super rare/` | 5 | 10% |
+| Legendaarne (Ultra Rare) | `skinid/ultra rare/` | 3 | 3% |
+
+Esmalt loositakse haruldus ja seejärel valitakse selle sees kaart juhuslikult.
+
+### Salvestus ja testimine
+
+| `localStorage` võti | Sisu |
+| --- | --- |
+| `unlockedSkins` | JSON-massiiv lahti lukustatud kaartide id-dega, nt `["Blue Cap Panda"]` |
+| `activeSkin` | Aktiivse kaardi id tavalise stringina, nt `Blue Cap Panda` |
+
+Kaardi id on panda nimi ehk failinimi ilma laiendita. Need võtmed on eraldi mänguedenemisest, seega ei kustuta mängu lähtestamine kaarte. Brauseri konsoolis saab kasutada `window.PandaCards`:
+
+```js
+PandaCards.openGacha(); // avab kirstu ilma mängu läbimata
+PandaCards.unlockSkin("Doctor Panda");
+PandaCards.setActiveSkin("Doctor Panda");
+PandaCards.getActiveSkinData(); // aktiivse kaardi andmed (id, nimi, haruldus, pildi tee)
+```
+
+Aktiivse kaardi muutudes saadetakse `window`-sündmus `panda-skins-change`, mida saab kasutada tegelase kuvamiseks mujal mängus.
 
 ## Käivitamine lokaalselt
 
@@ -77,7 +120,7 @@ Veendu, et HTML, JavaScript, CSS ja pildikaustad oleksid kõik avaldatud. Faili-
 - Tavaline JavaScript, ilma build-tööriistata
 - Three.js 0.180.0, laaditakse jsDelivr'i CDN-ist
 - VT323 font Google Fontsist
-- `localStorage` mänguedu ja parima skoori säilitamiseks
+- `localStorage` mänguedu, parima skoori ja Panda kaartide säilitamiseks
 
 Rakendus vajab kaasaegset brauserit, mis toetab JavaScripti ES-mooduleid ja WebGL-i.
 
@@ -88,10 +131,14 @@ Rakendus vajab kaasaegset brauserit, mis toetab JavaScripti ES-mooduleid ja WebG
 | `index.html` | Avalehe ja mänguvaate struktuur |
 | `style.css` | Pixel-art stiil ja kohanduv kujundus |
 | `app.js` | Mängu olek, tasemed, toiduvalik, lohistamine, hindamine ja edenemise salvestamine |
+| `skins.js` | Panda kaardid: kataloog, kaardikogu, siluetid, GAMBA! kirst, rulett ja salvestus |
 | `foods.js` | Toiduainete andmebaas ja piltide viited |
 | `pyramid3d.js` | Pöörlev 3D-toidupüramiid ja korruste valimine |
 | `bowl3d.js` | Pöörleva 3D-kausi geomeetria ja renderdamine |
 | `Food pyramid/Line/` | Toiduainete pixel-art pildid kategooriate kaupa |
+| `buttons/` | Pildinupud: `skins.png` (Panda kaardid), `hint.png` (Hint), `home.png` (Home) |
+| `skinid/` | Panda kaardid haruldusastme kaustades `common`, `rare`, `super rare` ja `ultra rare` |
+| `Pixel Art Treasure Chest.png` | GAMBA! pop-upi kirstu pilt |
 | `NutriKauss.jpg` | Avalehe logo |
 | `taustapilt.jpg` | Veebilehe taustapilt |
 
@@ -106,9 +153,17 @@ localStorage.removeItem("foodPyramidGameProgress");
 location.reload();
 ```
 
+Panda kaartide lähtestamiseks:
+
+```js
+localStorage.removeItem("unlockedSkins");
+localStorage.removeItem("activeSkin");
+location.reload();
+```
+
 ## Panustamine
 
-Muudatuste jaoks loo eraldi haru, testi mängu nii arvuti- kui mobiilivaates ning ava GitHubis pull request koos muudatuste kirjeldusega. Eriti kontrolli tasemete avamist, toidu lohistamist ja 3D-vaadete kuvamist.
+Muudatuste jaoks loo eraldi haru, testi mängu nii arvuti- kui mobiilivaates ning ava GitHubis pull request koos muudatuste kirjeldusega. Eriti kontrolli tasemete avamist, toidu lohistamist, 3D-vaadete kuvamist ning Panda kaartide kogu ja GAMBA! kirstu.
 
 ## Litsents
 

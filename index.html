@@ -21,7 +21,7 @@
       href="https://fonts.googleapis.com/css2?family=VT323&display=swap"
       rel="stylesheet"
     />
-    <link rel="stylesheet" href="style.css" />
+    <link rel="stylesheet" href="style.css?v=7" />
   </head>
   <body>
     <div id="app">
@@ -43,7 +43,25 @@
 
         <main class="home-layout">
           <div class="pyramid-panel">
-            <h2>Vali tase</h2>
+            <div class="level-heading-row">
+              <h2>Vali tase</h2>
+              <button
+                id="skinsBtn"
+                class="pixel-btn skins-btn"
+                type="button"
+                aria-haspopup="dialog"
+                aria-controls="skinsModal"
+                title="Ava Panda kaardid"
+              >
+                <img
+                  class="pixel-btn-img"
+                  src="buttons/skins.png"
+                  alt=""
+                  draggable="false"
+                />
+                <span class="pixel-btn-label">Panda kaardid</span>
+              </button>
+            </div>
 
             <div class="pyramid-scene home-pyramid-container">
               <canvas
@@ -92,21 +110,31 @@
           <div class="game-actions">
             <button
               id="hintBtn"
-              class="secondary-btn icon-btn"
+              class="pixel-btn"
               type="button"
-              aria-label="Näita vihjet"
               title="Näita vihjet"
             >
-              ?
+              <img
+                class="pixel-btn-img"
+                src="buttons/hint.png"
+                alt=""
+                draggable="false"
+              />
+              <span class="pixel-btn-label">Hint</span>
             </button>
             <button
               id="backHomeBtn"
-              class="ghost-btn"
+              class="pixel-btn"
               type="button"
-              aria-label="Tagasi avalehele"
               title="Tagasi avalehele"
             >
-              <span aria-hidden="true">⌂</span>
+              <img
+                class="pixel-btn-img"
+                src="buttons/home.png"
+                alt=""
+                draggable="false"
+              />
+              <span class="pixel-btn-label">Home</span>
             </button>
           </div>
         </header>
@@ -136,10 +164,15 @@
                 →
               </button>
             </div>
-            <div
-              class="level-prompt speech-bubble"
-              id="levelPromptInline"
-            ></div>
+            <div class="panda-row">
+              <div class="panda-avatar" id="pandaAvatar" aria-hidden="true">
+                <img id="pandaAvatarImg" alt="" draggable="false" />
+              </div>
+              <div
+                class="level-prompt speech-bubble"
+                id="levelPromptInline"
+              ></div>
+            </div>
           </section>
 
           <section class="bowl-panel bowl-section">
@@ -245,14 +278,106 @@
       <div class="modal-card result-card">
         <h3 id="resultTitle">Tulemus</h3>
         <div id="resultText" class="result-content"></div>
-        <button id="closeResultBtn" class="primary-btn" type="button">
-          Jätka
+        <div class="result-actions">
+          <p id="gambaHint" class="gamba-hint" hidden></p>
+          <button id="gambaBtn" class="gamba-btn" type="button" hidden>
+            GAMBA!
+          </button>
+          <button id="closeResultBtn" class="primary-btn" type="button">
+            Jätka
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="gachaModal"
+      class="modal gacha-modal hidden"
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="gachaTitle"
+    >
+      <div class="gacha-card">
+        <button
+          id="gachaCloseBtn"
+          class="close-modal gacha-close"
+          type="button"
+          aria-label="Sulge kirst"
+        >
+          ×
         </button>
+        <h3 id="gachaTitle" class="gacha-title">GAMBA!</h3>
+        <ul id="gachaRates" class="gacha-rates" aria-label="Kaartide tõenäosused"></ul>
+
+        <div id="reelWindow" class="reel-window" aria-hidden="true">
+          <div id="reelStrip" class="reel-strip"></div>
+          <span class="reel-marker"></span>
+        </div>
+
+        <div class="gacha-chest-wrap">
+          <img
+            id="gachaChest"
+            class="gacha-chest"
+            src="Pixel%20Art%20Treasure%20Chest.png"
+            alt="Aardekirst"
+            draggable="false"
+          />
+          <span id="gachaFlash" class="gacha-flash" aria-hidden="true"></span>
+        </div>
+
+        <div class="gacha-stage">
+          <p id="gachaStatus" class="gacha-status" role="status" aria-live="polite"></p>
+
+          <div id="gachaResult" class="gacha-result" hidden>
+            <p id="gachaBanner" class="gacha-banner"></p>
+            <p id="gachaWonName" class="gacha-won-name"></p>
+            <p id="gachaWonRarity" class="gacha-won-rarity"></p>
+          </div>
+        </div>
+
+        <div id="gachaActions" class="gacha-actions is-pending">
+          <button id="gachaEquipBtn" class="gacha-action-btn gacha-equip-btn" type="button">
+            Kasuta tegelasena
+          </button>
+          <button id="gachaCollectionBtn" class="gacha-action-btn" type="button">
+            Kaardikogu
+          </button>
+          <button id="gachaDoneBtn" class="gacha-action-btn" type="button">
+            Sulge
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div
+      id="skinsModal"
+      class="modal hidden"
+      aria-modal="true"
+      role="dialog"
+      aria-labelledby="skinsTitle"
+    >
+      <div class="modal-card skins-card">
+        <button
+          class="close-modal skins-close"
+          type="button"
+          aria-label="Sulge Panda kaardid"
+        >
+          ×
+        </button>
+        <div class="skins-header">
+          <h3 id="skinsTitle">Panda kaardid</h3>
+          <p id="skinsProgress" class="skins-progress"></p>
+          <p id="skinsStatus" class="skins-status" role="status" aria-live="polite"></p>
+        </div>
+        <div class="skins-scroll">
+          <div id="skinsGrid" class="skins-grid"></div>
+        </div>
       </div>
     </div>
 
     <script src="foods.js"></script>
-    <script src="app.js"></script>
+    <script src="skins.js?v=6"></script>
+    <script src="app.js?v=6"></script>
     <script type="module" src="pyramid3d.js"></script>
     <script type="module" src="bowl3d.js"></script>
   </body>
